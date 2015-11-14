@@ -122,8 +122,9 @@ void web2perma(char *fNameIn, char *fNameOut)
 	free(pStrIn);
 }
 
-int main(void)
+int main(int argc, char *argv[])
 {
-	web2perma("example.xml", "out.xml");
+	for (int i = 1; i < argc; i += 2)
+		web2perma(argv[i], argv[i+1]);
 }
 
