@@ -83,10 +83,15 @@ void web2perma(char *fNameIn, char *fNameOut)
 {
 	char *pStrIn;
 	unsigned fSizeIn;
-	FILE *fpIn = fopen(fNameIn, "r"), *fpOut = fopen(fNameOut, "w");
+	FILE *fpIn = fopen(fNameIn, "r"), *fpOut = fopen(fNameOut, "w+");
+
+	if (!fpIn)
+		printf("E: Could not open input file %s\n", fNameIn);
+	if (!fpOut)
+		printf("E: Could not open output file %s\n", fNameOut);
 
 	if (!fpIn || !fpOut)
-		return NULL;
+		return;
 
 	fseek(fpIn, 0, SEEK_END);
 	fSizeIn = ftell(fpIn);
@@ -100,6 +105,7 @@ void web2perma(char *fNameIn, char *fNameOut)
 	while (cur = strstr(cur, "http"))
 	{
 		end = MIN(strstr(cur, ". "), strchr(cur, ' '));
+		end = MIN(strstr(cur, "</"), end);
 
 		if ((cur[4] == 's' && cur[5] == ':' && cur[6] == '/' && cur[7] == '/')
 		|| ( cur[4] == ':' && cur[5] == '/' && cur[6] == '/'))
@@ -108,9 +114,12 @@ void web2perma(char *fNameIn, char *fNameOut)
 			end[0] = '\0';
 			fprintf(fpOut, "%s", wrh);
 			char *pURL = getPermaLink(cur);
-			fprintf(fpOut, " (http://perma.cc/%s)", pURL);
+			if (pURL)
+			{
+				fprintf(fpOut, " (http://perma.cc/%s)", pURL);
+				free(pURL);
+			}
 			end[0] = t;
-			free(pURL);
 		}
 
 		wrh = end;
