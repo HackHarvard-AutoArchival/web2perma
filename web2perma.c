@@ -35,6 +35,8 @@ static size_t JSONCallback(void *contents, size_t size, size_t nmemb, void *user
  */
 char *getPermaLink(char *URL)
 {
+	return NULL;
+
 	CURL *curl;
 	CURLcode res;
 	struct curl_slist *headers = NULL;
@@ -79,9 +81,44 @@ char *getPermaLink(char *URL)
 	return PermLnk;
 }
 
-void web2perma(char *fNameIn, char *fNameOut)
+/*
+ * Append _perma to filename
+ */
+char *fNameGetPerma(char* fName) {
+	char *r, *p;
+
+	r = malloc(strlen(fName) + 6), *p;
+	p = &r[strlen(fName)];
+	strcpy(r, fName);
+	while (p >= r)
+	{
+		if (*p == '.') {
+			memmove(&p[6], &p[0], strlen(p)+1);
+			p[0] = '_';
+			p[1] = 'p';
+			p[2] = 'e';
+			p[3] = 'r';
+			p[4] = 'm';
+			p[5] = 'a';
+
+			break;
+		}
+		p--;
+	}
+
+	return r;
+}
+
+/*
+ * Most of this function deals with the idiotic links in legal text
+ *
+ * Hall of Fame (in no specific order:
+ *	
+ *
+ */
+void web2perma(char *fNameIn)
 {
-	char *pStrIn;
+	char *pStrIn, *fNameOut = fNameGetPerma(fNameIn);
 	unsigned fSizeIn;
 	FILE *fpIn = fopen(fNameIn, "r"), *fpOut = fopen(fNameOut, "w+");
 
@@ -100,40 +137,110 @@ void web2perma(char *fNameIn, char *fNameOut)
 	fread(pStrIn, sizeof(char), fSizeIn, fpIn);
 	fclose(fpIn);
 
-	char *cur = strstr(pStrIn, "<html") ? strstr(pStrIn, "<html") : pStrIn, *end = pStrIn, *wrh = pStrIn;
+	char *fin = strstr(pStrIn, "\"plain_text\"");
+	char *p01 = strstr(pStrIn, "\"html");
+	char *cur = p01 ? p01 : pStrIn;
+	char *end = pStrIn, *wrh = pStrIn;
 
 	while (cur = strstr(cur, "http"))
 	{
-		end = MIN(strstr(cur, ". "), strchr(cur, ' '));
-		end = MIN(strstr(cur, "</"), end);
-
-		if ((cur[4] == 's' && cur[5] == ':' && cur[6] == '/' && cur[7] == '/')
-		|| ( cur[4] == ':' && cur[5] == '/' && cur[6] == '/'))
+		if (cur > fin)
+			break;
+		if ((cur[4] == 's')
+		||  (cur[4] == ':'))
 		{
+			end = strchr(cur, '<');
+			end = MIN(strchr(cur, '>'), end);
+			end = MIN(strchr(cur, '%'), end);
+			end = MIN(strchr(cur, '|'), end);
+			end = MIN(strchr(cur, '^'), end);
+			end = MIN(strchr(cur, '['), end);
+			char *sc = strchr(cur, ';');
+			char *am = strchr(cur, '&');
+			if (am > sc)
+				end = MIN(sc, end);
+			end = MIN(strchr(cur, '('), end);
+			end = MIN(strchr(cur, ')'), end);
+			end = MIN(strchr(cur, ','), end);
+			end = MIN(strchr(cur, '\''), end);
+			end = MIN(strchr(cur, '\"'), end);
+			end = MIN(strstr(cur+1, "http"), end);
+
+			char *p = cur;
+			for (;;) {
+				p = strchr(p+1, '.');
+				if (!p || p > end)
+					break;
+				if (p[1] == ' ')
+				{
+					if (p[2] < 'a' || p[2] > 'z')
+						end = p;
+				} else {
+					if (p[1] < 'a' || p[1] > 'z')
+						end = p;
+				}
+			}
+
 			char t = end[0];
 			end[0] = '\0';
 			fprintf(fpOut, "%s", wrh);
-			char *pURL = getPermaLink(cur);
+
+			char *cURL = strdup(cur);
+			char *tURL = cURL;
+			int i = 0;
+			while (*tURL)
+			{
+				if (*tURL != ' '
+				&& (!(tURL[0] == '\\' && tURL[1] == 'n'))
+				&& (!(tURL[0] == 'n' && tURL[-1] == '\\'))
+				)
+					cURL[i++] = *tURL;
+				tURL++;
+			}
+			cURL[i] = '\0';
+			p = cURL;
+			for(;;) {
+				p = strchr(p+1, '&');
+				if (!p || p >= &cURL[strlen(cURL)])
+					break;
+				if (strncmp(p, "&#8212;", 7) == 0)
+				{
+					*p = '_';
+					strcpy(p+1, p+7);
+				} else if (strncmp(p, "&amp;", 5) == 0) {
+					strcpy(p+1, p+5);
+				} else if (strncmp(p, "&gt;", 4) == 0) {
+					*p = '>';
+					strcpy(p+1, p+4);
+				}
+			}
+			printf("%s\n", cURL);
+			char *pURL = getPermaLink(cURL);
+			free(cURL);
 			if (pURL)
 			{
 				fprintf(fpOut, " (http://perma.cc/%s)", pURL);
 				free(pURL);
+			} else {
+				fprintf(fpOut, cur);
 			}
 			end[0] = t;
-		}
 
-		wrh = end;
-		cur = end + 1;
+			wrh = end;
+			cur = end + 1;
+		}
+		cur++;
 	}
 
 	fprintf(fpOut, "%s", wrh);
 	fclose(fpOut);
 	free(pStrIn);
+	free(fNameOut);
 }
 
 int main(int argc, char *argv[])
 {
 	for (int i = 1; i < argc; i += 2)
-		web2perma(argv[i], argv[i+1]);
+		web2perma(argv[i]);
 }
 
