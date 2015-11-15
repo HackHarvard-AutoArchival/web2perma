@@ -85,26 +85,11 @@ char *getPermaLink(char *URL)
  * Append _perma to filename
  */
 char *fNameGetPerma(char* fName) {
-	char *r, *p;
 
-	r = malloc(strlen(fName) + 6), *p;
-	p = &r[strlen(fName)];
+	char *r = malloc(strlen(fName) + 6);
+
 	strcpy(r, fName);
-	while (p >= r)
-	{
-		if (*p == '.') {
-			memmove(&p[6], &p[0], strlen(p)+1);
-			p[0] = '_';
-			p[1] = 'p';
-			p[2] = 'e';
-			p[3] = 'r';
-			p[4] = 'm';
-			p[5] = 'a';
-
-			break;
-		}
-		p--;
-	}
+	strcat(r, "_perma");
 
 	return r;
 }
