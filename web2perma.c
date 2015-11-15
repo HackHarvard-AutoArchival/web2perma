@@ -1,6 +1,15 @@
 /*
  * Some license I don't really care about
  *
+ * Seriously, this is hackathon code and
+ * you shouldn't probably be using it in
+ * your project. Think twice, make it
+ * thrice. Most of it is very closely
+ * tailored to the data crunched at the
+ * event and can have corner cases that
+ * weren't tested as part of the sample
+ * data.
+ *
  *	- Shantanu Gupta <shans95g@gmail.com>
  */
 
@@ -85,13 +94,23 @@ char *getPermaLink(char *URL)
 char *fNameGetPerma(char* fName) {
 
 	char *r = malloc(strlen(fName) + 7);
-
 	strcpy(r, fName);
-	strcat(r, "_perma");
+	char *ext = strstr(r, ".json");
+
+	if (ext)
+	{
+		strcpy(ext, "_perma");
+		strcat(ext, ".json");
+	} else {
+		printf("Something went terribly wrong!\n");
+	}
 
 	return r;
 }
 
+/*
+ * Handle pdf file, this is VERY HACKY!
+ */
 void pdf2perma(char *fNameIn)
 {
 	int e;
@@ -101,6 +120,7 @@ void pdf2perma(char *fNameIn)
 	strcat(cmd, fNameIn);
 
 	e = system(cmd);
+	free(cmd);
 
 	if (e) {
 		printf("E: Could not convert pdf to text :(\n");
@@ -161,18 +181,24 @@ void pdf2perma(char *fNameIn)
 			cURL[i] = '\0';
 			printf("%s\n", cURL);
 			char *pLink = getPermaLink(cURL);
+			free(cURL);
 			end[0] = ' ';
-			if (pLink)
+			if (pLink) {
 				fprintf(fpIn, "(http://perma.cc/%s)", pLink);
+				free(pLink);
+			}
 			cur++;
 			wrh = end;
 		}
 	}
+	free(pStrIn);
 	fclose(fpIn);
 }
 
 /*
- * Most of this function deals with the idiotic links in legal text
+ * This function handles json files, this is VERY HACKY!
+ *
+ * Most of it deals with the idiotic links in legal text
  *
  * Hall of Fame (in no specific order (split at whitespace, some extra parts
  *				preserved for user to understand that I'm not a psycho):
@@ -299,7 +325,7 @@ void web2perma(char *fNameIn)
 				fprintf(fpOut, " (http://perma.cc/%s)", pURL);
 				free(pURL);
 			} else {
-				fprintf(fpOut, cur);
+				fprintf(fpOut, cur);  // I'm not really sure WTF I was doing, fix this later.
 			}
 			end[0] = t;
 
