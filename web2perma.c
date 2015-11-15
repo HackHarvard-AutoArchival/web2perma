@@ -95,10 +95,20 @@ char *fNameGetPerma(char* fName) {
 /*
  * Most of this function deals with the idiotic links in legal text
  *
- * Hall of Fame (in no specific order:
- *	
- *
+ * Hall of Fame (in no specific order (split at whitespace, some extra parts
+ *				preserved for user to understand that I'm not a psycho):
+ *	http://www.whitehouse drugpolicy.gov/streetterms/ByType.asp?int TypeID =2
+ *	Cocaine,\nhttp://www.whitehousedrugpolicy.gov/streetterms/ByType.asp?intTyp\neID=2
+ *	http://www.usdoj.gov/oig/special/s 0608/full&#8212;report.pdf.</p>\n
+ *	at\nhttp://www.usdoj.gov/oig/special/s0608/full_report.pdf.\n
+ *	2011),\nhttp://www.census.gov/newsroom/releases/archives/2010_census/cb11\n-cn181.html;
+ *	http://www.hcch.\n\nnet/upload/wop/abd_pd02efs2006.pdf
+ *	http://www.nacdl.org/public.nsf/2cdd02b415ea 3a64852566d6000daa79/departures/$FILE/Rehnquist_letter.pdf.
+ *	http://www.nacdl.org/ public.nsf/2cdd02b415ea3a64852566d6000daa79/departures/$FILE/stcg_ comm_current.pdf.
+ *	http://www.epa.gov/OUST/ pubs/musts.pdf
+ *	\"\nhttp://www.epa.gov/ogwdw/contaminants/dw_contamfs/benzene.html\n(last
  */
+
 void web2perma(char *fNameIn)
 {
 	char *pStrIn, *fNameOut = fNameGetPerma(fNameIn);
