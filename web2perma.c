@@ -84,12 +84,91 @@ char *getPermaLink(char *URL)
  */
 char *fNameGetPerma(char* fName) {
 
-	char *r = malloc(strlen(fName) + 6);
+	char *r = malloc(strlen(fName) + 7);
 
 	strcpy(r, fName);
 	strcat(r, "_perma");
 
 	return r;
+}
+
+void pdf2perma(char *fNameIn)
+{
+	int e;
+	char *cmd = malloc(11 + strlen(fNameIn));
+
+	strcpy(cmd, "pdftotext ");
+	strcat(cmd, fNameIn);
+
+	e = system(cmd);
+
+	if (e) {
+		printf("E: Could not convert pdf to text :(\n");
+		return;
+	}
+
+	char *fNameInTxt = strdup(fNameIn);
+	char *fNameInExt = strstr(fNameInTxt, ".pdf");
+	strcpy(fNameInExt, ".txt");
+
+	FILE *fpIn = fopen(fNameInTxt, "r");
+	unsigned fSizeIn;
+	char *pStrIn;
+
+	fseek(fpIn, 0, SEEK_END);
+	fSizeIn = ftell(fpIn);
+	rewind(fpIn);
+	pStrIn = malloc(fSizeIn * sizeof(char));
+	fread(pStrIn, sizeof(char), fSizeIn, fpIn);
+	fclose(fpIn);
+	fpIn = fopen(fNameInTxt, "w");
+
+	char *cur = pStrIn, *end = pStrIn, *wrh = pStrIn;
+
+	while(cur = strstr(cur, "http"))
+	{
+		if (cur[4] == 's'
+		|| (cur[4] == ':'))
+		{
+			end = strchr(cur+1, ' ');
+			end = MIN(strchr(cur, ';'), end);
+			end = MIN(strchr(cur, '['), end);
+			end = MIN(strstr(cur+1, "http"), end);
+			end = MIN(strstr(cur, ".\n"), end);
+			end = MIN(strstr(cur, ". "), end);
+			end = MIN(strstr(cur, "\n\n"), end);
+
+			if (end[-1] == '.')
+			{
+				end--;
+			}
+
+			end[0] = '\0';
+			fprintf(fpIn, "%s ", wrh);
+			char *cURL = strdup(cur);
+			char *tURL = cURL;
+			int i = 0;
+			while (*tURL)
+			{
+				if (*tURL != ' '
+				&& (*tURL != '\n')
+				&& (!(tURL[0] == '\\' && tURL[1] == 'n'))
+				&& (!(tURL[0] == 'n' && tURL[-1] == '\\'))
+				)
+					cURL[i++] = *tURL;
+				tURL++;
+			}
+			cURL[i] = '\0';
+			printf("%s\n", cURL);
+			char *pLink = getPermaLink(cURL);
+			end[0] = ' ';
+			if (pLink)
+				fprintf(fpIn, "(http://perma.cc/%s)", pLink);
+			cur++;
+			wrh = end;
+		}
+	}
+	fclose(fpIn);
 }
 
 /*
@@ -111,6 +190,11 @@ char *fNameGetPerma(char* fName) {
 
 void web2perma(char *fNameIn)
 {
+	char *pdf = strstr(fNameIn, ".pdf");
+
+	if (pdf && pdf[4] == '\0')
+		return pdf2perma(fNameIn);
+
 	char *pStrIn, *fNameOut = fNameGetPerma(fNameIn);
 	unsigned fSizeIn;
 	FILE *fpIn = fopen(fNameIn, "r"), *fpOut = fopen(fNameOut, "w+");
