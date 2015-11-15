@@ -35,8 +35,6 @@ static size_t JSONCallback(void *contents, size_t size, size_t nmemb, void *user
  */
 char *getPermaLink(char *URL)
 {
-	return NULL;
-
 	CURL *curl;
 	CURLcode res;
 	struct curl_slist *headers = NULL;
