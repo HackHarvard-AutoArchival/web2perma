@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <curl/curl.h>
 
+#define E_NOMEM (-1)
+
 #define MTO_API "http://timetravel.mementoweb.org/api/json/0/"
 
 #define PRM_KEY "4e4b3c5a831c61c77ae7343d91bcb7f548942ca0"
@@ -33,7 +35,7 @@ static size_t JSONCallBack(void *contents, size_t size, size_t nmemb, void *user
 
 	*ptr = realloc(*ptr, (size * nmemb) + 1);
 	if (*ptr == NULL)
-		exit(-1);
+		exit(E_NOMEM);
 	memcpy(*ptr, contents, size * nmemb);
 	(*ptr)[size * nmemb] = '\0';
 
@@ -51,26 +53,26 @@ char *cUrlPerform(char *pURL, char *JSONReq)
 
 	curl = curl_easy_init();
 	if (!curl)
-		exit(-1);
-
-	headers = curl_slist_append(headers, "Accept: application/json");
-	if (JSONReq)
-		headers = curl_slist_append(headers, "Content-Type: application/json");
+		exit(E_NOMEM);
 
 	curl_easy_setopt(curl, CURLOPT_URL, pURL);
 	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0);
 	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
-	if (JSONReq == NULL)
+
+	if (JSONReq == NULL) {
 		curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "GET");
-	else
+		curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
+	} else {
 		curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "POST");
-	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-	if (JSONReq)
-	{
 		curl_easy_setopt(curl, CURLOPT_POST, 1);
 		curl_easy_setopt(curl, CURLOPT_POSTFIELDS, JSONReq);
 		curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, strlen(JSONReq));
+		headers = curl_slist_append(headers, "Content-Type: application/json");
 	}
+
+	headers = curl_slist_append(headers, "Accept: application/json");
+
+	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, JSONCallBack);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *) &JSONRes);
 	curl_easy_setopt(curl, CURLOPT_USERAGENT, "permacc++");
@@ -91,14 +93,14 @@ char *getMemtoLink(char *sURL)
 
 	JSONEndp = malloc(strlen(sURL) + 45);
 	if (!JSONEndp)
-		exit(-1);
+		exit(E_NOMEM);
 
 	strcpy(JSONEndp, MTO_API);
 	strcat(JSONEndp, sURL);
 
 	JSONRes = cUrlPerform(JSONEndp, NULL);
 	if (!JSONRes)
-		goto cleanup;
+		goto cleanupEx;
 
 	idx = strstr(JSONRes, "\"last\":{\"datetime\":\"");
 	if (idx == NULL)
@@ -112,6 +114,8 @@ char *getMemtoLink(char *sURL)
 
 cleanup:
 	free(JSONRes);
+cleanupEx:
+	free(JSONEndp);
 
 	return ret;
 }
@@ -122,25 +126,24 @@ char *getPermaLink(char *sURL)
 
 	JSONReq = malloc(strlen(sURL) + 32);
 	if (!JSONReq)
-		exit(-1);
+		exit(E_NOMEM);
 
 	sprintf(JSONReq, "{\n\t\"url\": \"%s\",\n\t\"title\": \"\"\n}\n", sURL);
 
 	JSONRes = cUrlPerform(PRM_API, JSONReq);
 	if (!JSONRes)
-		goto cleanup;
+		return NULL;
 
 	idx = strstr(JSONRes, "\"guid\": \"");
 	if (idx == NULL)
 		goto cleanup;
 	idx[18] = '\0';
 
-	ret = malloc(32);
+	ret = strdup("http://perma.cc/         ");
 	if (!ret)
-		exit(-1);
+		exit(E_NOMEM);
 
-	strcpy(ret, "http://perma.cc/");
-	strcat(ret, &idx[9]);
+	strcpy(&ret[16], &idx[9]);
 
 cleanup:
 	free(JSONRes);
@@ -172,33 +175,39 @@ void pdf2perma(char *sNameInPdf)
 	long iInLen;
 
 	cmd = malloc(11 + strlen(sNameInPdf));
+	if (!cmd)
+		exit(E_NOMEM);
 	sprintf(cmd, "pdftotext %s", sNameInPdf);
-
 	e = system(cmd);
 	free(cmd);
-
 	if (e)
-	{
-		printf("E: Could not convert %s :(\n", sNameInPdf);
-		return;
-	}
+		return; // Process next file
 
 	sNameInTxt = strdup(sNameInPdf);
+	if (!sNameInTxt)
+		exit(E_NOMEM);
 	strcpy(&sNameInTxt[strlen(sNameInPdf) - 3], "txt");
 	sNameOutCsv = strdup(sNameInPdf);
+	if (!sNameOutCsv)
+		exit(E_NOMEM);
 	strcpy(&sNameOutCsv[strlen(sNameInPdf) - 3], "csv");
 
 	fp = fopen(sNameInTxt, "r");
+	if (!fp)
+		return; // Process next file
 	fseek(fp, 0, SEEK_END);
 	iInLen = ftell(fp);
 	sIn = malloc(iInLen + 1);
+	if (!sIn)
+		exit(E_NOMEM);
 	rewind(fp);
 	fread(sIn, sizeof(char), (size_t) iInLen, fp);
 	fclose(fp);
 	free(sNameInTxt);
 
 	fp = fopen(sNameOutCsv, "w+");
-
+	if (!fp)
+		return; // Process next file
 	cur = sIn;
 
 	while(cur = strstr(cur, "http"))
@@ -223,6 +232,8 @@ void pdf2perma(char *sNameInPdf)
 			end[0] = '\0';
 
 			cURL = strdup(cur);
+			if (!cURL)
+				exit(E_NOMEM);
 			tURL = cURL;
 			while (*tURL)
 			{
@@ -239,6 +250,8 @@ void pdf2perma(char *sNameInPdf)
 			tURL = getPermLink(cURL);
 			if (tURL == NULL)
 				tURL = strdup("E: API");
+			if (tURL == NULL)
+				exit(E_NOMEM);
 			fprintf(fp, "%s\n", tURL);
 			free(tURL);
 			free(cURL);
@@ -252,154 +265,6 @@ void pdf2perma(char *sNameInPdf)
 	free(sNameOutCsv);
 }
 
-/*
- * This function handles json files, this is VERY HACKY!
- * Most of it deals with the **bad** links in legal text
- *
- * Also, this function is as is from the hackathon version
- * as I have finals coming up and cannot afford to deal
- * with this at the moment.
- *
- * Hall of Fame:
- *
- *	http://www.whitehouse drugpolicy.gov/streetterms/ByType.asp?int TypeID =2
- *	Cocaine,\nhttp://www.whitehousedrugpolicy.gov/streetterms/ByType.asp?intTyp\neID=2
- *	http://www.usdoj.gov/oig/special/s 0608/full&#8212;report.pdf.</p>\n
- *	at\nhttp://www.usdoj.gov/oig/special/s0608/full_report.pdf.\n
- *	2011),\nhttp://www.census.gov/newsroom/releases/archives/2010_census/cb11\n-cn181.html;
- *	http://www.hcch.\n\nnet/upload/wop/abd_pd02efs2006.pdf
- *	http://www.nacdl.org/public.nsf/2cdd02b415ea 3a64852566d6000daa79/departures/$FILE/Rehnquist_letter.pdf.
- *	http://www.nacdl.org/ public.nsf/2cdd02b415ea3a64852566d6000daa79/departures/$FILE/stcg_ comm_current.pdf.
- *	http://www.epa.gov/OUST/ pubs/musts.pdf
- *	\"\nhttp://www.epa.gov/ogwdw/contaminants/dw_contamfs/benzene.html\n(last
- */
-
-void jso2perma(char *fNameIn)
-{
-	char *pStrIn, *fNameOut;
-	unsigned fSizeIn;
-	FILE *fpIn, *fpOut;
-
-	fNameOut = malloc(strlen(fNameIn) + 7);
-	strcpy(fNameOut, fNameIn);
-	strcpy(&fNameOut[strlen(fNameOut) - 5], "_perma.json");
-
-	fpIn  = fopen(fNameIn, "r");
-	fpOut = fopen(fNameOut, "w+");
-
-	if (!fpIn)
-		printf("E: Could not open input file %s\n", fNameIn);
-	if (!fpOut)
-		printf("E: Could not open output file %s\n", fNameOut);
-
-	if (!fpIn || !fpOut)
-		return;
-
-	fseek(fpIn, 0, SEEK_END);
-	fSizeIn = ftell(fpIn);
-	rewind(fpIn);
-	pStrIn = malloc(fSizeIn * sizeof(char));
-	fread(pStrIn, sizeof(char), fSizeIn, fpIn);
-	fclose(fpIn);
-
-	char *fin = strstr(pStrIn, "\"plain_text\"");
-	char *p01 = strstr(pStrIn, "\"html");
-	char *cur = p01 ? p01 : pStrIn;
-	char *end = pStrIn, *wrh = pStrIn;
-
-	while (cur = strstr(cur, "http"))
-	{
-		if (cur > fin)
-			break;
-		if ((cur[4] == 's')
-		||  (cur[4] == ':'))
-		{
-			end = strchr(cur, '<');
-			end = MIN_PTR(strchr(cur, '>'), end);
-			end = MIN_PTR(strchr(cur, '%'), end);
-			end = MIN_PTR(strchr(cur, '|'), end);
-			end = MIN_PTR(strchr(cur, '^'), end);
-			end = MIN_PTR(strchr(cur, '['), end);
-			char *sc = strchr(cur, ';');
-			char *am = strchr(cur, '&');
-			if (am > sc)
-				end = MIN_PTR(sc, end);
-			end = MIN_PTR(strchr(cur, '('), end);
-			end = MIN_PTR(strchr(cur, ')'), end);
-			end = MIN_PTR(strchr(cur, ','), end);
-			end = MIN_PTR(strchr(cur, '\''), end);
-			end = MIN_PTR(strchr(cur, '\"'), end);
-			end = MIN_PTR(strstr(cur+1, "http"), end);
-
-			char *p = cur;
-			for (;;) {
-				p = strchr(p+1, '.');
-				if (!p || p > end)
-					break;
-				if (p[1] == ' ')
-				{
-					if (p[2] < 'a' || p[2] > 'z')
-						end = p;
-				} else {
-					if (p[1] < 'a' || p[1] > 'z')
-						end = p;
-				}
-			}
-
-			char t = end[0];
-			end[0] = '\0';
-			fprintf(fpOut, "%s", wrh);
-
-			char *cURL = strdup(cur);
-			char *tURL = cURL;
-			int i = 0;
-			while (*tURL)
-			{
-				if (*tURL != ' '
-				&& (!(tURL[0] == '\\' && tURL[1] == 'n'))
-				&& (!(tURL[0] == 'n' && tURL[-1] == '\\'))
-				)
-					cURL[i++] = *tURL;
-				tURL++;
-			}
-			cURL[i] = '\0';
-			p = cURL;
-			for(;;) {
-				p = strchr(p+1, '&');
-				if (!p || p >= &cURL[strlen(cURL)])
-					break;
-				if (strncmp(p, "&#8212;", 7) == 0)
-				{
-					*p = '_';
-					strcpy(p+1, p+7);
-				} else if (strncmp(p, "&amp;", 5) == 0) {
-					strcpy(p+1, p+5);
-				} else if (strncmp(p, "&gt;", 4) == 0) {
-					*p = '>';
-					strcpy(p+1, p+4);
-				}
-			}
-			char *pURL = getPermLink(cURL);
-			free(cURL);
-			if (pURL)
-			{
-				fprintf(fpOut, " (%s)", pURL);
-				free(pURL);
-			}
-			end[0] = t;
-
-			wrh = end;
-			cur = end + 1;
-		}
-		cur++;
-	}
-
-	fprintf(fpOut, "%s", wrh);
-	fclose(fpOut);
-	free(pStrIn);
-	free(fNameOut);
-}
-
 int main(int argc, char *argv[])
 {
 	curl_global_init(CURL_GLOBAL_ALL);
@@ -407,21 +272,16 @@ int main(int argc, char *argv[])
 	for (int i = 1; i < argc; i++)
 	{
 		char *pptr = strstr(argv[i], ".pdf");
-		char *jptr = strstr(argv[i], ".json");
 
 		while (pptr != NULL && pptr[4] != '\0')
 			pptr = strstr(pptr+4, ".pdf");
-		while (jptr != NULL && jptr[5] != '\0')
-			jptr = strstr(jptr+5, ".json");
 
-		if (pptr == NULL && jptr == NULL)
+		if (pptr)
 		{
-			printf("Usage: ./url2perma [*.pdf|*.json]+\n");
-		} else if (pptr == NULL && jptr != NULL) {
-			jso2perma(argv[i]);
-		} else if (pptr != NULL && jptr == NULL) {
 			pdf2perma(argv[i]);
-		} // else Impossibru!
+		} else {
+			printf("Usage: ./url2perma [*.pdf]+\n");
+		}
 	}
 
 	curl_global_cleanup();
