@@ -363,11 +363,10 @@ void pdf2perma(char *sNameInPdf)
 			sNameInTxt,
 			sNameInTxt);
 	n = system(cmd);
-	if (n)
-		exit(E_SYSTM);
 
 	sprintf(cmd, "%stemp.pdf", sNameInTxt);
-	remove(cmd);
+	if (!n)
+		remove(cmd);
 
 	pbar(95);
 
