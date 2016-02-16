@@ -277,6 +277,7 @@ void pdf2perma(char *sNameInPdf)
 			end = MIN_PTR(end, strchr(cur, ' '));
 			end = MIN_PTR(end, strchr(cur, '('));
 			end = MIN_PTR(end, strchr(cur, ')'));
+			end = MIN_PTR(end, strchr(cur, ','));
 			end = MIN_PTR(end, strchr(cur, ';'));
 			for (char chr = 1; chr < 32; chr++)
 				if (chr != '\n')
@@ -289,10 +290,6 @@ void pdf2perma(char *sNameInPdf)
 			// Weed out known bad characters "\\n", "\n" and " ".
 			tmp = &cur[i];
 			do {
-////////////////////////////////////////////////////////////////////////////////
-				if (*tmp == '\\' && tmp[1] == 'n')
-					 tmp ++; else
-////////////////////////////////////////////////////////////////////////////////
 				if (*tmp != ' '
 				&& (*tmp != '\n'))
 					 cur[i++] = *tmp;
