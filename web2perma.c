@@ -9,9 +9,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <curl/curl.h>
 
-#define E_NOMEM (-1)
+#define E_NOMEM (1)
+#define E_SYSTM (2)
+#define E_ASSRT (3)
 
 #define MTO_API "http://timetravel.mementoweb.org/api/json/0/"
 
@@ -23,7 +26,16 @@
 ({                                                                             \
 	__typeof__ (a) _a = (a);                                                   \
 	__typeof__ (b) _b = (b);                                                   \
-	_b < _a ? _b != NULL ? _b : _a : _a != NULL ? _a : _b;                     \
+	__typeof__ (a) _r;                                                         \
+                                                                               \
+	if (_a == NULL)                                                            \
+		_r = _b; else                                                          \
+	if (_b == NULL)                                                            \
+		_r = _a;                                                               \
+	else                                                                       \
+		_r = _b < _a ? _b : _a;                                                \
+                                                                               \
+	_r;                                                                        \
 })
 
 /*
@@ -33,7 +45,10 @@ static size_t JSONCallBack(void *contents, size_t size, size_t nmemb, void *user
 {
 	char **ptr = userp;
 
-	*ptr = realloc(*ptr, (size * nmemb) + 1);
+	// Something isn't right! but waiting it out seems to fix it.
+	if (*ptr)
+		usleep(100000);
+	*ptr = malloc((size * nmemb) + 1);
 	if (!*ptr)
 		exit(E_NOMEM);
 	memcpy(*ptr, contents, size * nmemb);
@@ -51,6 +66,7 @@ char *cUrlPerform(char *pURL, char *JSONReq)
 	char *JSONRes = NULL;
 	struct curl_slist *headers = NULL;
 
+	curl_global_init(CURL_GLOBAL_ALL);
 	curl = curl_easy_init();
 	if (!curl)
 		exit(E_NOMEM);
@@ -73,9 +89,12 @@ char *cUrlPerform(char *pURL, char *JSONReq)
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, JSONCallBack);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *) &JSONRes);
 	curl_easy_setopt(curl, CURLOPT_USERAGENT, "permacc++");
+
 	curl_easy_perform(curl);
-	curl_easy_cleanup(curl);
+
 	curl_slist_free_all(headers);
+	curl_easy_cleanup(curl);
+	curl_global_cleanup();
 
 	return JSONRes;
 }
@@ -85,31 +104,27 @@ char *getMemtoLink(char *sURL)
 {
 	char *JSONEndp, *JSONRes, *idx, *ret = NULL;
 
-	JSONEndp = malloc(strlen(sURL) + strlen(MTO_API));
-	if (!JSONEndp)
-		exit(E_NOMEM);
+	JSONEndp = malloc(strlen(sURL) + strlen(MTO_API) + 1);
+	if (JSONEndp) {
+		strcpy(JSONEndp, MTO_API);
+		strcat(JSONEndp, sURL);
 
-	strcpy(JSONEndp, MTO_API);
-	strcat(JSONEndp, sURL);
+		JSONRes = cUrlPerform(JSONEndp, NULL);
+		if (JSONRes) {
+			idx = strstr(JSONRes, "\"last\":{\"datetime\":\"");
+			if (idx) {
+				idx = strstr(idx, "\"uri\":[\"");
+				ret = &idx[8];
+				idx = MIN_PTR(strstr(idx, "\","), strstr(idx, "\"]"));
+				idx[0] = '\0';
+				ret = strdup(ret);
+			}
 
-	JSONRes = cUrlPerform(JSONEndp, NULL);
-	if (!JSONRes)
-		goto cleanupEx;
+			free(JSONRes);
+		}
 
-	idx = strstr(JSONRes, "\"last\":{\"datetime\":\"");
-	if (!idx)
-		goto cleanup;
-
-	idx = strstr(idx, "\"uri\":[\"");
-	ret = &idx[8];
-	idx = MIN_PTR(strstr(idx, "\","), strstr(idx, "\"]"));
-	idx[0] = '\0';
-	ret = strdup(ret);
-
-cleanup:
-	free(JSONRes);
-cleanupEx:
-	free(JSONEndp);
+		free(JSONEndp);
+	}
 
 	return ret;
 }
@@ -178,7 +193,7 @@ void pdf2perma(char *sNameInPdf)
 	char *cur;
 	char *sIn;
 	char *sNameInTxt;
-	char *sNameOutTex;
+	char *sNameOut;
 	long  iInLen;
 
 	pbar(0);
@@ -200,10 +215,10 @@ void pdf2perma(char *sNameInPdf)
 	if (!sNameInTxt)
 		exit(E_NOMEM);
 	strcpy(&sNameInTxt[strlen(sNameInPdf) - 3], "txt");
-	sNameOutTex = strdup(sNameInPdf);
-	if (!sNameOutTex)
+	sNameOut = strdup(sNameInPdf);
+	if (!sNameOut)
 		exit(E_NOMEM);
-	strcpy(&sNameOutTex[strlen(sNameInPdf) - 3], "tex");
+	strcpy(&sNameOut[strlen(sNameInPdf) - 3], "tex");
 
 	pbar(15);
 
@@ -224,24 +239,30 @@ void pdf2perma(char *sNameInPdf)
 	pbar(18);
 
 	// Create Tex file
-	fp = fopen(sNameOutTex, "w+");
+	fp = fopen(sNameOut, "w+");
 	if (!fp)
 		goto cleanupEx;
+
 	fprintf(fp, "\\documentclass{article}\n"
 				"\\usepackage[english]{babel}\n"
 				"\\usepackage[hidelinks]{hyperref}\n"
+				"\\usepackage{longtable}\n"
 				"\\begin{document}\n"
+				"\\begingroup\n"
+				"\\vspace*{-6\\baselineskip}\n"
+				"\\setlength{\\LTleft}{-20cm plus -1fill}\n"
+				"\\setlength{\\LTright}{\\LTleft}\n"
 				"\t\\begin{sloppypar}\n"
-				"\t\\hspace*{-3.5cm}\n"
 				"\t\\def\\arraystretch{1.6}%\n"
-				"\t\\begin{tabular}{ | p{8.6cm} | p{8.6cm} | } \\hline\n"
-				"\tOriginal URL & Perma URL \\\\ \\hline\n");
+				"\t\\begin{longtable}{ | p{8cm} | p{8cm} | } \\hline\n"
+				"\t\\centering Source URL &	\\centering Perma URL\n"
+				"\t\\tabularnewline \\hline\n");
 
 	pbar(20);
 
 	// Process text
 	cur = sIn;
-	while(cur = strstr(cur, "http"))
+	while((cur = strstr(cur, "http")) != NULL)
 	{
 		pbar(20 + (60*(((float) (cur-sIn))/iInLen)));
 
@@ -249,17 +270,18 @@ void pdf2perma(char *sNameInPdf)
 		|| (cur[4] == 's' && cur[5] == ':'))
 		{
 			unsigned i = 4;
-			char *tmp, *end;
+			char *tmp, *end, *dec;
 
 			// Find end of the URL
 			end = NULL;
 			end = MIN_PTR(end, strchr(cur, ' '));
-			end = MIN_PTR(end, strchr(cur, ';'));
-			end = MIN_PTR(end, strchr(cur, '['));
+			end = MIN_PTR(end, strchr(cur, '('));
 			end = MIN_PTR(end, strchr(cur, ')'));
+			end = MIN_PTR(end, strchr(cur, ';'));
+			for (char chr = 1; chr < 32; chr++)
+				if (chr != '\n')
+					end = MIN_PTR(end, strchr(cur, chr));
 			end = MIN_PTR(end, strstr(cur, ".\n"));
-			end = MIN_PTR(end, strstr(cur, ". "));
-			end = MIN_PTR(end, strstr(cur, "\n\n"));
 
 			if (end[-1] == '.')
 				end--;
@@ -283,40 +305,83 @@ void pdf2perma(char *sNameInPdf)
 			if (tmp == NULL)
 				exit(E_NOMEM);
 
-			fprintf(fp, "\t\\url{%s} & \\url{%s} \\\\ \\hline\n", cur, tmp);
-			free(tmp);
+			// Because
+			// https://groups.google.com/forum/#!topic/google-gson/JDHUo9DWyyM
+			// "=" encoded as "\u003d"
+			while ((dec = strstr(tmp, "\\u003d")) != NULL)
+			{
+				*dec = '=';
+				memmove(&dec[1], &dec[6], strlen(&dec[6]) + 1);
+			}
+			// "&" encoded as "\u0026"
+			while ((dec = strstr(tmp, "\\u0026")) != NULL)
+			{
+				*dec = '=';
+				memmove(&dec[1], &dec[6], strlen(&dec[6]) + 1);
+			}
 
+			fprintf(fp, "\t\\url{%s} & \\url{%s} \\\\ \\hline\n", cur, tmp);
+
+			free(tmp);
 			cur = end + 1;
 		}
 	}
 
-	fprintf(fp, "\t\\end{tabular}\n"
+	fprintf(fp, "\t\\end{longtable}\n"
 				"\t\\end{sloppypar}\n"
-				"\\end{document}");
+				"\\endgroup\n"
+				"\\end{document}\n");
 	fclose(fp);
 
 	pbar(80);
 
-	// compile .tex
+	cur = strstr(sNameInTxt, ".txt");
+	cur[0] = '\0';
+
+	// Compile to pdf
+	cmd = malloc(48 + (2*strlen(sNameInPdf)));
+	if (!cmd)
+		exit(E_NOMEM);
+	sprintf(cmd, "pdflatex -jobname %stemp %s >/dev/null", sNameInTxt, sNameOut);
+	n = system(cmd);
+	if (n)
+		exit(E_SYSTM);
+
+	// Remove temp files
+	remove(sNameOut);
+	sprintf(cmd, "%stemp.aux", sNameInTxt);
+	remove(cmd);
+	sprintf(cmd, "%stemp.log", sNameInTxt);
+	remove(cmd);
+	sprintf(cmd, "%stemp.out", sNameInTxt);
+	remove(cmd);
 
 	pbar(90);
 
-	// append .pdf
+	sprintf(cmd, "pdftk %s.pdf %stemp.pdf cat output %s_perma.pdf",
+			sNameInTxt,
+			sNameInTxt,
+			sNameInTxt);
+	n = system(cmd);
+	if (n)
+		exit(E_SYSTM);
+
+	sprintf(cmd, "%stemp.pdf", sNameInTxt);
+	remove(cmd);
 
 	pbar(95);
 
 cleanupEx:
 	free(sIn);
 cleanup:
-	free(sNameOutTex);
+	free(cmd);
+	free(sNameOut);
 	free(sNameInTxt);
 	pbar(100);
 }
 
 int main(int argc, char *argv[])
 {
-	curl_global_init(CURL_GLOBAL_ALL);
-
 	for (int i = 1; i < argc; i++)
 	{
 		char *pptr = strstr(argv[i], ".pdf");
@@ -334,7 +399,5 @@ int main(int argc, char *argv[])
 		}
 
 	}
-
-	curl_global_cleanup();
 }
 
